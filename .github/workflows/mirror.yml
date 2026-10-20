@@ -1,0 +1,36 @@
+name: mirror-duix
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要复制的镜像标签"
+        default: "trt10.9"
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      SRC: docker://docker.io/guiji2025/duix.avatar-5090
+    steps:
+      - name: 准备 skopeo
+        run: which skopeo || (sudo apt-get update && sudo apt-get install -y skopeo)
+
+      - name: 列出 Docker Hub 上实际有哪些标签
+        run: skopeo list-tags $SRC
+
+      - name: 查看镜像大小
+        run: |
+          skopeo --override-os linux --override-arch amd64 inspect $SRC:${{ inputs.tag }} > info.json
+          jq -r '"层数: \(.LayersData|length)  压缩后总大小: \(([.LayersData[].Size]|add)/1e9) GB"' info.json
+
+      - name: 复制到阿里云
+        env:
+          REG: ${{ secrets.ALIYUN_REGISTRY }}
+          NS: ${{ secrets.ALIYUN_NAMESPACE }}
+          U: ${{ secrets.ALIYUN_USER }}
+          P: ${{ secrets.ALIYUN_PASSWORD }}
+        run: |
+          skopeo --override-os linux --override-arch amd64 copy --retry-times 5 \
+            --dest-creds "$U:$P" \
+            $SRC:${{ inputs.tag }} \
+            docker://$REG/$NS/duix-avatar-5090:${{ inputs.tag }}
